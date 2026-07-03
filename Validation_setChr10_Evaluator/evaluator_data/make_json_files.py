@@ -13,12 +13,11 @@ for i, start in enumerate(range(0, chrom_length - segment_size, segment_size), 1
 
 # Assemble the full request
 request_payload = {
-    "request": "predict",
     "readout": "interaction_matrix",
     "prediction_tasks": [
         {
             "name": "orca_chrom10_eval",
-            "type": "chromatin_conformation",
+            "type": "conformation_chromatin",
             "cell_type": "H1",
             "scale": "log",
             "species": "homo_sapiens"
