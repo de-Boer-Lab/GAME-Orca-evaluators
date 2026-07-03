@@ -13,12 +13,11 @@ for i, start in enumerate(range(0, chrom_length - segment_size, segment_size), 1
 
 # Assemble the full request
 request_payload = {
-    "request": "predict",
     "readout": "interaction_matrix",
     "prediction_tasks": [
         {
             "name": "orca_chrom8_eval",
-            "type": "chromatin_conformation",
+            "type": "conformation_chromatin",
             "cell_type": "H1",
             "scale": "log",
             "species": "homo_sapiens"
@@ -28,7 +27,7 @@ request_payload = {
 }
 
 # Write to JSON file
-with open("/scratch/st-cdeboer-1/iluthra/game_apis/final_APIs/predictors/Orca_final/evaluator_data/chr8_sequence_coordinates.json", "w") as f:
+with open("./chr8_sequence_coordinates.json", "w") as f:
     json.dump(request_payload, f, indent=2)
 
 print(f"Wrote {len(sequence_coordinates)} sequence segments to chr8_sequence_coordinates.json")
