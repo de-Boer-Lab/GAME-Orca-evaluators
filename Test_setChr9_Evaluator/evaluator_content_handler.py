@@ -16,13 +16,11 @@ def _make_request_with_retry(http_method, url, **kwargs):
     """
     A single, robust retry function for all network requests.
     Handles connection errors with a constant retry interval.
-    Explicitly disables environment HTTP(S) proxies so that
-    local cluster addresses (127.0.0.1, 172.x.x.x, etc.)
-    are contacted directly.
+    Explicitly disables environment HTTP(S) proxies so that local cluster
+    addresses (127.0.0.1, 172.x.x.x, etc.) are contacted directly.
     """
-
-    # Force requests to *not* use any HTTP(S) proxies
-    # even if http_proxy / https_proxy are set in the environment.
+    # Force requests to *not* use any HTTP(S) proxies even if http_proxy /
+    # https_proxy are set in the environment.
     kwargs.setdefault("proxies", {"http": None, "https": None})
 
     for attempt in range(1, config.MAX_RETRIES + 1):
@@ -32,7 +30,7 @@ def _make_request_with_retry(http_method, url, **kwargs):
             return response
 
         except requests.exceptions.RequestException as e:
-            # Don't retry on HTTP status errors (4xx/5xx) – that's a logical error, not network.
+            # Don't retry on HTTP status errors (4xx/5xx) - that's a logical error.
             if isinstance(e, requests.exceptions.HTTPError):
                 raise e
 
@@ -48,49 +46,44 @@ def _make_request_with_retry(http_method, url, **kwargs):
             else:
                 print(
                     f"Tried connecting {attempt} times. Exceeded maximum number of retries. "
-                    f"Failed to get formats from Predictor. Exiting..."
+                    f"Failed to reach Predictor. Exiting..."
                 )
                 raise e
+            
 
 def negotiate_formats(predictor_url):
     """Gets formats from predictor and negotiates the ones to use."""
     formats_url = f"{predictor_url}/formats"
     print(f"--- Negotiating formats with Predictor at {formats_url} ---")
 
-    # The helper function will use timeout=None by default
-    # Use 'get' to pull the supported formats from a Predictor
     response = _make_request_with_retry('get', formats_url)
     supported = response.json()
 
-    #Formats the Predictor can handle
     pred_request_fmts = [f.lower() for f in supported.get("predictor_supported_request_formats", [])]
     pred_response_fmts = [f.lower() for f in supported.get("predictor_supported_response_formats", [])]
-    
-    #All Evaluators and Predictors can handle JSON
-    if "application/json" not in pred_request_fmts: 
+
+    # All Evaluators and Predictors can handle JSON
+    if "application/json" not in pred_request_fmts:
         pred_request_fmts.append("application/json")
     if "application/json" not in pred_response_fmts:
         pred_response_fmts.append("application/json")
     print(f"Predictor can receive: {pred_request_fmts}")
     print(f"Predictor can send back: {pred_response_fmts}")
-    
-    # Decide request format having parsed what Predictor can support
+
     if config.REQUEST_FORMAT in pred_request_fmts:
         negotiated_request_fmt = config.REQUEST_FORMAT
     else:
         negotiated_request_fmt = "application/json"
         if config.REQUEST_FORMAT != "application/json":
             print(f"WARNING: REQUEST_FORMAT='{config.REQUEST_FORMAT}' not supported by Predictor; Using JSON")
-    
-    # Decide response format
+
     if config.RESPONSE_FORMAT in pred_response_fmts:
         negotiated_response_fmt = config.RESPONSE_FORMAT
-        
-    else: 
+    else:
         negotiated_response_fmt = "application/json"
         if config.RESPONSE_FORMAT != "application/json":
             print(f"WARNING: RESPONSE_FORMAT='{config.RESPONSE_FORMAT}' not supported by Predictor; Using JSON")
-    
+
     print(f"Negotiated Request Format: {negotiated_request_fmt}")
     print(f"Negotiated Response Format: {negotiated_response_fmt}")
     return negotiated_request_fmt, negotiated_response_fmt
@@ -99,9 +92,7 @@ def negotiate_formats(predictor_url):
 def get_predictions(predictor_url, data_dict, negotiated_req_fmt, negotiated_resp_fmt):
     """Posts the data to the predictor and returns the deserialized response."""
     predict_url = f"{predictor_url}/predict"
-    
-    # Prepare and serialize request
-    # Append headers to request JSON
+
     headers = {"Content-Type": negotiated_req_fmt,
                "Accept": negotiated_resp_fmt}
 
@@ -133,9 +124,6 @@ def deserialize_response(response, negotiated_resp_fmt):
                 f"Warning: Response format '{response_fmt_actual}' does NOT match "
                 f"negotiated format '{negotiated_resp_fmt}'"
             )
-
-        # if negotiated_resp_fmt not in response_fmt_actual:
-        #     print(f"Warning: Response format '{response_fmt_actual}' does NOT match negotiated format '{negotiated_resp_fmt}'")
         
         try:
             if "application/msgpack" in response_fmt_actual or "application/msgpack-numpy" in response_fmt_actual:

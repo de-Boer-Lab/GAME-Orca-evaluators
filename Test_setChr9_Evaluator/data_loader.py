@@ -1,16 +1,11 @@
 '''Handle Loading and Validating Evaluator Input/Request Data'''
 
-import os
 import json
-import msgpack
 from collections import Counter
 import functools
-import numpy as np
-import torch, warnings
 
-import sys 
-from config import EVALUATOR_INPUT_PATH, input_file
-import pysam
+from config import EVALUATOR_INPUT_PATH
+
 class DuplicateKeysError(ValueError):
     """Raised when duplicate keys are found in a JSON object."""
     pass
@@ -161,28 +156,3 @@ def load_and_validate_data():
     else:
         raise ValueError("Orca evaluator expected 'sequence_coordinates' in input JSON.")
     return data_dict
-
-#Without using seqstr
-# def load_and_validate_data():
-#     fasta_path = "/orca/resources/Homo_sapiens.GRCh38.dna.primary_assembly.fa"
-#     genome = pysam.FastaFile(fasta_path)
-#     data_dict = check_duplicates_from_json(EVALUATOR_INPUT_PATH)
-#     # Orca-specific: turn coordinates into sequences
-#     if "sequence_coordinates" in data_dict:
-#         retrieved_seqs = {}
-#         seq_len = 1000000
-#         for key, (chr, coord) in data_dict["sequence_coordinates"].items():
-#             seqstr_input = f"[hg38]{chr}:{coord}-{coord+seq_len} +"
-#             print(f"Fetching sequence: {seqstr_input}")
-
-#             seq = genome.fetch(chr, coord, coord+seq_len)
-#             seq = seq.upper()
-#             print(seq)
-
-#             if len(seq) != seq_len:
-#                 raise ValueError(f"Sequence {key} length != {seq_len}")
-#             retrieved_seqs[key] = seq
-#         data_dict["sequences"] = retrieved_seqs
-#     else:
-#         raise ValueError("Orca evaluator expected 'sequence_coordinates' in input JSON.")
-#     return data_dict

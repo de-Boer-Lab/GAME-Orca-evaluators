@@ -1,0 +1,70 @@
+Bootstrap: localimage
+From: ../test.sif
+
+%files
+    ./config.py /Test_setChr9_Evaluator/config.py
+    ./data_loader.py /Test_setChr9_Evaluator/data_loader.py
+    ./evaluator_content_handler.py /Test_setChr9_Evaluator/evaluator_content_handler.py 
+    ./evaluator_metrics_calculator.py /Test_setChr9_Evaluator/evaluator_metrics_calculator.py
+    ./evaluator_RestAPI.py /Test_setChr9_Evaluator/evaluator_RestAPI.py
+
+%environment
+    # Prevent automatic binding of host directories
+    export APPTAINER_NO_MOUNT="home,tmp,proc,sys,dev"
+
+%post
+    # The base's default python is orca_env; make that explicit so the pip below
+    # installs into orca_env and not the system python:3.13-slim interpreter.
+    export PATH="/opt/conda/envs/orca_env/bin:$PATH"
+
+    echo "Installing evaluator client dependencies into orca_env..."
+    # requests + msgpack(+numpy) are what the evaluator actually uses; seqstr/torch
+    # /scipy/pandas/numpy/orca_predict are already in the base. flask is unused by
+    # the evaluator (client side) but kept for parity with the prod build.
+    pip install flask msgpack msgpack_numpy requests
+
+    echo "Setting permissions..."
+    chmod -R 755 /Test_setChr9_Evaluator
+
+%runscript
+    export PATH="/opt/conda/envs/orca_env/bin:$PATH"
+    exec python /Test_setChr9_Evaluator/evaluator_RestAPI.py "$@"
+
+%startscript
+    export PATH="/opt/conda/envs/orca_env/bin:$PATH"
+    exec python /Test_setChr9_Evaluator/evaluator_RestAPI.py "$@"
+
+%labels
+    Author "Rui Guo with edits from Ishika Luthra and Satyam Priyadarshi"
+    game_schema_version "1.0"
+    Description "This container is the Test Set Chr9 Evaluator set up using the Genomic API for Model Evaluation framework."
+
+%help
+    Test Set Chr9 Evaluator for the GAME framework (ORCA 1M Predictor).
+
+    About this evaluator:
+    Tiles human chromosome 8 (GRCh38, the ORCA held-out test set) into 1 Mb windows,
+    fetches each hg38 sequence at runtime, and requests interaction_matrix predictions of 3D 
+    chromatin conformation. Each predicted 250x250 H1-ESC contact matrix is compared against
+    the measured Hi-C target via Pearson r, enabling standardized evaluation of genomic 
+    models on chromatin conformation.
+
+    This container includes:
+    - Evaluator API script for genomic sequence evaluation
+    - Evaluator utility scripts (data loading, content negotiation, metrics calculation)
+    - Installed Python dependencies required by the Evaluator
+
+    Built on the Orca eval base (test.sif): orca_env, CUDA 11.8 torch, seqstr,
+    and the resources_core + resources_mcools target data under /orca/resources.
+
+    Mount the data and output directories at runtime:
+        apptainer run --nv \
+            -B /path/to/Test_setChr9_Evaluator/evaluator_data:/evaluator_data \
+            -B /path/to/predictions:/predictions \
+            orca-testSet-chr9_evaluator.sif <predictor_ip> <predictor_port> /predictions
+
+    - `--nv` exposes the host GPU (the evaluator recomputes Hi-C targets via Orca)
+    - `/evaluator_data` must contain `chr9_sequence_coordinates.json`
+    - The third argument is the in-container output path (the mount target above).
+
+    

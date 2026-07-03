@@ -1,5 +1,4 @@
 {
-  "request": "predict",
   "readout": "interaction_matrix",
   "prediction_tasks": [
     {
