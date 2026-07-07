@@ -14,6 +14,13 @@ The three Evaluators here are very similar and only differ in the data they load
 
 > All three instances run identical code. The only per-instance difference is the contents of `evaluator_data/` (the coordinates JSON) plus three string values in `config.py`. See [Per-chromosome configuration](#per-chromosome-configuration).
 
+## Important Links
+
+- Main GAME Repository: [de-Boer-Lab/Genomic-API-for-Model-Evaluation](https://github.com/de-Boer-Lab/Genomic-API-for-Model-Evaluation)
+- GAME Documentation: [ReadTheDocs](https://genomic-api-for-model-evaluation-documentation.readthedocs.io)
+- Pre-built Evaluator container images: Hugging Face — [Chr8 test set](https://huggingface.co/datasets/deBoerLab/Orca_Chr8_testSet_GAME), [Chr9 test set](https://huggingface.co/datasets/deBoerLab/Orca_Chr9_testSet_GAME), [Chr10 validation set](https://huggingface.co/datasets/deBoerLab/Orca_Chr10_validationSet_GAME)
+- List of all [GAME Modules](https://github.com/de-Boer-Lab/GAME_modules)
+
 ## Quick start
 
 ```bash
