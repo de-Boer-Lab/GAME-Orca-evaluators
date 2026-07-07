@@ -16,7 +16,7 @@ The three Evaluators here are very similar and only differ in the data they load
 
 ## Important Links
 
-- To learn more about the GAME Framework ([Main GAME Repository](https://github.com/de-Boer-Lab/Genomic-API-for-Model-Evaluation), [preprint](https://www.biorxiv.org/content/10.1101/2025.07.04.663250v1.full))
+- Main GAME Repository: [de-Boer-Lab/Genomic-API-for-Model-Evaluation](https://github.com/de-Boer-Lab/Genomic-API-for-Model-Evaluation)
 - GAME Documentation: [ReadTheDocs](https://genomic-api-for-model-evaluation-documentation.readthedocs.io)
 - Pre-built Evaluator container images: Hugging Face — [Chr8 test set](https://huggingface.co/datasets/deBoerLab/Orca_Chr8_testSet_GAME), [Chr9 test set](https://huggingface.co/datasets/deBoerLab/Orca_Chr9_testSet_GAME), [Chr10 validation set](https://huggingface.co/datasets/deBoerLab/Orca_Chr10_validationSet_GAME)
 - List of all [GAME Modules](https://github.com/de-Boer-Lab/GAME_modules)
