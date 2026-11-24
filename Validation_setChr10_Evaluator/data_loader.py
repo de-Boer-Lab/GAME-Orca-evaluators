@@ -153,6 +153,8 @@ def load_and_validate_data():
                 raise ValueError(f"Sequence {key} length != {seq_len}")
             retrieved_seqs[key] = seq
         data_dict["sequences"] = retrieved_seqs
+        #don't send the coordinates to the Predictors
+        data_dict.pop("sequence_coordinates")
     else:
         raise ValueError("Orca evaluator expected 'sequence_coordinates' in input JSON.")
     return data_dict

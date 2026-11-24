@@ -1,6 +1,6 @@
 '''Calculate and save the final evaluation metrics (Orca, interaction_matrix / Hi-C)
 
-This module computes Pearson r between the Predictor's predicted 250x250 contact
+This module computes Pearson r between the Orca 1M Predictor's predicted 250x250 contact
 matrices and the measured Hi-C target matrices for each sent sequence, then reports
 the mean across sequences as a single per-task value.
 
@@ -41,10 +41,8 @@ orca_predict.load_resources(models=['1M'], use_cuda=torch.cuda.is_available())
 from orca_predict import h1esc_1m, target_h1esc_1m
 
 SEQ_LEN = 1_000_000
-MATRIX_DIM = 250  # Orca 1M output is 250 x 250 at 4 kb resolution
 
-
-def _compute_target_matrix(chrom, coord, model):
+def _compute_target_matrix(chrom, coord, model, bin_size, MATRIX_DIM):
     """
     Reconstruct the measured Hi-C target for one 1 Mb tile as a 250x250 log-ratio
     matrix, in the same space the Orca model emits. Math preserved verbatim from the
@@ -77,7 +75,7 @@ def _compute_target_matrix(chrom, coord, model):
     return target_np
 
 
-def _calculate_task_correlation(single_task_data, seq_dict):
+def _calculate_task_correlation(single_task_data, seq_dict, bin_size):
     """
     Compute the mean Pearson r for a single prediction task over all SENT sequences.
 
@@ -122,6 +120,10 @@ def _calculate_task_correlation(single_task_data, seq_dict):
               f"for task '{task_name}' -> disqualified (NaN).")
         return _result(None)
 
+    if not bin_size:
+        print(f"No bin_size returned by the Predictor -> task '{task_name}' disqualified (NaN).")
+        return _result(None)
+
     model = h1esc_1m
     correlations = {}
 
@@ -135,10 +137,12 @@ def _calculate_task_correlation(single_task_data, seq_dict):
 
         pred_arr = np.asarray(predictions_dict[key], dtype=float)
 
-        # ---- Stern check 2: shape must be exactly 250 x 250 ----
-        if pred_arr.shape != (MATRIX_DIM, MATRIX_DIM):
+        #Check that the returned array matches the expected size for this Evaluator
+        matrix_dim = SEQ_LEN // bin_size
+
+        if pred_arr.shape != (matrix_dim, matrix_dim):
             print(f"Sequence '{key}' prediction has shape {pred_arr.shape}, "
-                  f"expected ({MATRIX_DIM}, {MATRIX_DIM}) -> disqualified (NaN).")
+                  f"expected ({matrix_dim}, {matrix_dim}) -> disqualified (NaN).")
             return _result(None)
 
         # ---- Stern check 3: any NaN/inf in a returned matrix is fatal ----
@@ -148,7 +152,7 @@ def _calculate_task_correlation(single_task_data, seq_dict):
             return _result(None)
 
         # ---- Measured side: reconstruct target, mask no-data positions ----
-        target_np = _compute_target_matrix(chrom, coord, model)
+        target_np = _compute_target_matrix(chrom, coord, model, bin_size, matrix_dim)
         valid = np.isfinite(target_np)
 
         if valid.sum() < 2:
@@ -198,6 +202,13 @@ def calculate_and_save_metrics(predictions_data, output_dir):
     predictor_name = predictions_data.get("predictor_name", "UnknownPredictor")
     predictor_name = predictor_name.replace(" ", "_").replace("/", "_")
 
+    
+    bin_size = predictions_data.get("bin_size")
+    print(f"The models bin size was: {bin_size}")
+    if not bin_size:
+        print("WARNING: No bin_size was returned by the Predictor -- every task will be "
+              "disqualified and reported as NaN.")
+
     evaluation_metrics_filename = f"evaluation_summary_{EVALUATOR_NAME}.csv"
     evaluation_metrics_filepath = os.path.join(output_dir, evaluation_metrics_filename)
 
@@ -220,9 +231,19 @@ def calculate_and_save_metrics(predictions_data, output_dir):
             {k: v for k, v in single_task_data.items() if k != "predictions"}
         ]
 
-        task_correlation_dict = _calculate_task_correlation(single_task_data, seq_dict)
+        # A raise anywhere in here (a short Hi-C target, a reshape mismatch, a bad
+        # coordinate) must not kill the run: disqualify this task and carry on, so the
+        # row below is still written.
+        try:
+            task_correlation_dict = _calculate_task_correlation(single_task_data, seq_dict, bin_size)
+            pearson_r_value = task_correlation_dict.get('pearson_r')
+        except Exception as e:
+            print(f"Task {task_index + 1} failed during correlation: {e} -> disqualified (NaN).",
+                  file=sys.stderr)
+            import traceback
+            traceback.print_exc()
+            pearson_r_value = None
 
-        pearson_r_value = task_correlation_dict.get('pearson_r')
         val_str = "NaN" if pearson_r_value is None else str(pearson_r_value)
 
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S.%f")

@@ -18,7 +18,7 @@ request_payload = {
         {
             "name": "orca_chrom9_eval",
             "type": "conformation_chromatin",
-            "cell_type": "H1",
+            "cell_type": "H1-ESC",
             "scale": "log",
             "species": "homo_sapiens"
         }

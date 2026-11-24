@@ -18,7 +18,7 @@ request_payload = {
         {
             "name": "orca_chrom10_eval",
             "type": "conformation_chromatin",
-            "cell_type": "H1",
+            "cell_type": "H1-ESC",
             "scale": "log",
             "species": "homo_sapiens"
         }
@@ -27,7 +27,7 @@ request_payload = {
 }
 
 # Write to JSON file
-with open("/scratch/st-cdeboer-1/iluthra/game_apis/final_APIs/predictors/Orca_final/evaluator_data/chr10_sequence_coordinates.json", "w") as f:
+with open("./chr10_sequence_coordinates.json", "w") as f:
     json.dump(request_payload, f, indent=2)
 
 print(f"Wrote {len(sequence_coordinates)} sequence segments to chr10_sequence_coordinates.json")

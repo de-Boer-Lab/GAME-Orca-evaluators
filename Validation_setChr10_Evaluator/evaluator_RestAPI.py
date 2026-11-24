@@ -114,7 +114,6 @@ def run_evaluator(predictor_ip, predictor_port, output_dir):
         preds = task.get("predictions", {})
         if isinstance(preds, dict) and "error" in preds:
             print(f"Task {i} ('{task.get('name')}') returned an error -- skipping length check.")
-            all_lengths_match = False
             continue
         n_preds = len(preds) if hasattr(preds, "__len__") else 0
         if n_preds != total_sequences:

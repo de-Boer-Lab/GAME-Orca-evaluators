@@ -1,5 +1,6 @@
-Bootstrap: localimage
-From: ../test.sif
+Bootstrap: docker
+From: python:3.13-slim
+Stage: build
 
 %files
     ./config.py /Test_setChr8_Evaluator/config.py
@@ -11,19 +12,73 @@ From: ../test.sif
 %environment
     # Prevent automatic binding of host directories
     export APPTAINER_NO_MOUNT="home,tmp,proc,sys,dev"
-
-%post
-    # The base's default python is orca_env; make that explicit so the pip below
-    # installs into orca_env and not the system python:3.13-slim interpreter.
+    export LC_ALL=C
     export PATH="/opt/conda/envs/orca_env/bin:$PATH"
+    export LD_LIBRARY_PATH="/opt/conda/envs/orca_env/lib:$LD_LIBRARY_PATH"
+    # seqstr env variable to get sequence
+    export GENOME_PATH='/orca/resources/'
+%post
 
-    echo "Installing evaluator client dependencies into orca_env..."
-    # requests + msgpack(+numpy) are what the evaluator actually uses; seqstr/torch
-    # /scipy/pandas/numpy/orca_predict are already in the base. flask is unused by
-    # the evaluator (client side) but kept for parity with the prod build.
+    echo "Installing system dependencies..."
+    apt-get update && \
+    apt-get install -y --no-install-recommends git wget bzip2 ca-certificates && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+    echo "Installing Miniconda..."
+    mkdir -p /opt && \
+    wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /opt/miniconda.sh && \
+    chmod +x /opt/miniconda.sh
+    bash /opt/miniconda.sh -b -p /opt/conda && \
+    rm -rf /opt/miniconda.sh
+
+    # echo "Installing mamba..."
+    export PATH="/opt/conda/bin:$PATH"
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+    conda install -y -n base -c conda-forge mamba
+    . /opt/conda/etc/profile.d/mamba.sh
+
+    echo "Getting orca repo..."
+    cd /
+    git clone https://github.com/jzhoulab/orca.git
+    cd orca
+
+    echo "Creating Conda environment 'orca_env'..."
+    # conda clean --all --yes
+    mamba env create -f orca_env_part1.yml -y
+    mamba activate orca_env
+
+    pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
     pip install flask msgpack msgpack_numpy requests
+    mamba env update -f orca_env_part2.yml -y
 
-    echo "Setting permissions..."
+    git clone https://github.com/kathyxchen/selene.git
+    cd selene
+    git checkout custom_target_support
+    python setup.py build_ext --inplace
+    python setup.py install 
+
+    echo "Verifying Conda environment creation..."
+    if ! conda env list | grep -q orca_env; then
+        echo "Error: Conda environment 'orca' was not created successfully."
+        exit 1
+    fi
+
+    echo "getting target values and hg38 reference genome"
+    cd /orca
+    wget https://zenodo.org/record/6234936/files/resources_core.tar.gz
+    tar -xf resources_core.tar.gz --no-same-owner
+    rm resources_core.tar.gz
+    # target files, around 34G
+    wget https://zenodo.org/record/6234936/files/resources_mcools.tar.gz 
+    tar -xf resources_mcools.tar.gz --no-same-owner
+    rm resources_mcools.tar.gz
+
+    # these files will be copied after testing
+    mkdir /scripts
+    echo "Setting permissions for directories and script..."
+    chmod -R 755 /scripts /opt/conda
+    chmod +x /opt/conda/envs/orca_env/bin/python
     chmod -R 755 /Test_setChr8_Evaluator
 
 %runscript
