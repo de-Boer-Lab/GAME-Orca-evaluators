@@ -12,7 +12,7 @@ The three Evaluators here are very similar and only differ in the data they load
 | `Test_setChr9_Evaluator/` | Orca **test** set | chr9 | 138 |
 | `Validation_setChr10_Evaluator/` | **validation** set | chr10 | 133 |
 
-> All three instances run identical code. The only per-instance difference is the contents of `evaluator_data/` (the coordinates JSON) plus three string values in `config.py`. See [Per-chromosome configuration](#per-chromosome-configuration).
+> All three instances run identical code. The only per-instance difference is the contents of `evaluator_data/` (the coordinates JSON) plus three string values in `config.py`: `evaluator_base`, `input_file` and `EVALUATOR_DESCRIPTION`.
 
 ## Important Links
 
@@ -24,13 +24,13 @@ The three Evaluators here are very similar and only differ in the data they load
 ## Quick start
 
 ```bash
-apptainer run --nv \
+apptainer run \
     -B /path/to/Test_setChr8_Evaluator/evaluator_data:/evaluator_data \
     -B /path/to/predictions:/predictions \
     orca-testSet-chr8_evaluator.sif <predictor_ip> <predictor_port> /predictions
 ```
 
-`--nv` exposes the host GPU (the evaluator recomputes Hi-C targets via Orca); `/evaluator_data` must contain the `chrN_sequence_coordinates.json` named in `config.py`; the third argument is the in-container output path. See [Building and running](#building-and-running) for the build step and dev-mode usage.
+No GPU is needed (see [GPU](#gpu-optional)); `/evaluator_data` must contain the `chrN_sequence_coordinates.json` named in `config.py`; the third argument is the in-container output path. See [Building and running](#building-and-running) for the build step.
 
 ---
 
@@ -44,32 +44,32 @@ evaluator_RestAPI.py  (entrypoint, orchestrates the run)
    └─ evaluator_metrics_calculator.py  rebuild Hi-C target matrix, Pearson r, write summary CSV
 ```
 
-1. **The request.** `evaluator_data/chrN_sequence_coordinates.json` holds a flat `sequence_coordinates` dict of `seqN: [chrom, start]` (one entry per 1 Mb window), wrapped in a request asking for `readout: interaction_matrix` on a single `conformation_chromatin` task (cell type `H1`, `log` scale, `homo_sapiens`).
-2. **Load + fetch sequences.** `data_loader.py` parses the JSON (rejecting duplicate keys), then converts each `[chrom, coord]` into a 1 Mb hg38 sequence via `seqstr` (`[hg38]chr:coord-coord+1000000 +`), asserting each is exactly 1,000,000 bp.
+1. **The request.** `evaluator_data/chrN_sequence_coordinates.json` holds a flat `sequence_coordinates` dict of `seqN: [chrom, start]` (one entry per 1 Mb window), wrapped in a request asking for `readout: interaction_matrix` on a single `conformation_chromatin` task (cell type `H1-ESC`, `log` scale, `homo_sapiens`).
+2. **Load + fetch sequences.** `data_loader.py` parses the JSON (rejecting duplicate keys), then converts each `[chrom, coord]` into a 1 Mb hg38 sequence via `seqstr` (`[hg38]chr:coord-coord+1000000 +`), asserting each is exactly 1,000,000 bp. The sequences replace `sequence_coordinates` in the request, so the Predictor never sees the coordinates.
 3. **Talk to the Predictor.** `evaluator_content_handler.py` negotiates wire formats against the Predictor's `/formats` endpoint, POSTs the payload to `/predict`, and deserializes the response. It prefers **msgpack / msgpack-numpy** and falls back to JSON.
 4. **Score.** `evaluator_metrics_calculator.py` loads the Orca 1M resources once, reconstructs the **measured** Hi-C target for each tile on the fly (`target_h1esc_1m`) in the same log-ratio space the model emits, and computes Pearson *r* against the predicted matrix. The mean over tiles is appended to a per-build summary CSV.
 
 ### Why msgpack-numpy
 
 - The preferred response format is `application/msgpack-numpy` as it can increase speed of transmission between Evaluator and Predictor
-- Raw responses are saved as `.msgpack` when they contain numpy arrays transmitted via msgpack, and `.json` otherwise.
+- Raw responses are saved as `.msgpack` when the response `Content-Type` is `application/msgpack-numpy` (the payload holds NumPy arrays that JSON cannot store), and as `.json` otherwise.
 
-### Why a GPU is required
+### GPU (optional)
 
-The measured Hi-C target for each tile is recomputed at runtime from the Orca resources, which is why the container needs `--nv` and loads `orca_predict` with CUDA when available.
+The Evaluator does not run the Orca model. It rebuilds each tile's measured Hi-C target at runtime from the Orca resources (`target_h1esc_1m`) and Orca's normalization constants, which runs on CPU. `orca_predict` is loaded with CUDA only if a GPU is visible, so `--nv` is optional.
 
 ### Scoring / NaN policy
 
-- Every *sent* sequence must come back with a finite, correctly shaped (250 × 250) matrix. A missing `seq_id`, a wrong shape, or **any** NaN/inf disqualifies the whole task → value `"NaN"`. A task-level error or scale mismatch (when a scale was requested) also disqualifies.
-- No-data positions in the measured Hi-C target are masked before correlating. A tile whose target is entirely no-data is dropped from the mean (no penalty — the gap is on the Evaluator, not the Predictor).
+- The response must include a top-level `bin_size`. Every *sent* sequence must come back with a finite matrix of shape `(1,000,000 / bin_size) × (1,000,000 / bin_size)` (250 × 250 at 4 kb). A missing `bin_size`, a sent `seq_id` with no prediction, a wrong shape, or **any** NaN/inf disqualifies the whole task → value `"NaN"`. A task-level error, a scale mismatch (when a scale was requested), or an exception while scoring also disqualifies the task.
+- No-data positions in the measured Hi-C target are masked before correlating. A tile whose target is entirely no-data is dropped from the mean (no penalty — the gap is on the Evaluator, not the Predictor); if every tile is dropped, the value is `"NaN"`.
 - **Zero variance after masking → `0.0`** ("ran but useless"), never NaN.
-- A 200 OK is required, and a length gate confirms every sent sequence got a prediction before metrics run.
+- Metrics are only calculated on a 200 OK, and only if every task that did not return an error has as many predictions as sequences sent. Otherwise the raw response is saved but **no row** is written to the summary CSV.
 
 ---
 
 ## Repository layout
 
-Each Evaluator folder is self-contained but follow identical structure:
+Each Evaluator folder is self-contained and follows the same structure:
 
 ```
 Test_setChr8_Evaluator/
@@ -81,7 +81,8 @@ Test_setChr8_Evaluator/
 ├── orca-testSet-chr8_evaluator.def# Apptainer/Singularity build recipe
 └── evaluator_data/
     ├── chr8_sequence_coordinates.json
-    └── README.md                  # how the coordinates JSON is (re)generated
+    ├── make_json_files.py         # regenerates the coordinates JSON
+    └── README.md                  # how the coordinates JSON is (re)generated (Chr8 folder only)
 ```
 
 | File | Responsibility |
@@ -91,14 +92,25 @@ Test_setChr8_Evaluator/
 | `evaluator_content_handler.py` | `/formats` negotiation, `/predict` POST with retry loop, msgpack/msgpack-numpy/JSON (de)serialization. |
 | `evaluator_metrics_calculator.py` | Reconstructs measured Hi-C targets, computes mean Pearson *r* per task, appends to summary CSV. |
 | `evaluator_RestAPI.py` | CLI entrypoint; wires everything together, saves raw payload, gates metric calculation. |
-| `*.def` | Apptainer recipe (build base, dependencies, run/start scripts, mounts). |
+| `*.def` | Apptainer recipe (build base, dependencies, Orca resources, run/start scripts). Data and output directories are bound at runtime. |
 
 The coordinates JSON in each `evaluator_data/` is pre-generated and ships with the repo. See the README inside `evaluator_data/` if you need to regenerate it for another chromosome.
 
 
 ## Building and running
 
-Instructions on how to rebuild from scratch are coming soon. 
+Building is optional: you only need to build if you don't already have the `.sif` (see the Hugging Face links above) or if you have changed the code. Each Evaluator is built from inside its own folder, since the `.def` copies the Python files with `./` paths:
+
+```bash
+cd Test_setChr8_Evaluator
+apptainer build orca-testSet-chr8_evaluator.sif orca-testSet-chr8_evaluator.def
+```
+
+(and likewise `Test_setChr9_Evaluator/orca-testSet-chr9_evaluator.def` and `Validation_setChr10_Evaluator/orca-validationSet-chr10_evaluator.def`).
+
+The build starts from `python:3.13-slim`, installs Miniconda and the `orca_env` environment (CUDA 11.8 PyTorch, the Selene `custom_target_support` fork) from the Orca repository, and downloads Orca's `resources_core` and `resources_mcools` (about 34 GB) from [Zenodo](https://zenodo.org/record/6234936). It needs internet access and plenty of temporary disk space; each image is about 45 GB.
+
+`evaluator_data/` is not built into the image. Bind it to `/evaluator_data` at runtime, along with an output directory, and pass the Predictor's address, its port and the in-container output path (see [Quick start](#quick-start)).
 
 ---
 
@@ -113,19 +125,19 @@ Instructions on how to rebuild from scratch are coming soon.
     {
       "name": "orca_chrom8_eval",
       "type": "conformation_chromatin",
-      "cell_type": "H1",
+      "cell_type": "H1-ESC",
       "scale": "log",
       "species": "homo_sapiens"
     }
   ],
-  "sequence_coordinates": {
-    "seq1": "ATAGAC...",
-    "seq2": "ATGCAT...
+  "sequences": {
+    "seq1": "ATAGAC...<1,000,000 bp>",
+    "seq2": "ATGCAT...<1,000,000 bp>"
   }
 }
 ```
 
-**Response** (what the Evaluator expects back): a `predictor_name`, a `prediction_tasks` list whose entries carry a `predictions` dict keyed by the same `seqN` ids, each mapping to a 250 × 250 matrix. Per-tile metadata (`type_actual`, `cell_type_actual`, `scale_prediction_actual`, …) is read back for reporting and validation.
+**Response** (what the Evaluator expects back): a `predictor_name`, a top-level `bin_size`, and a `prediction_tasks` list whose entries carry a `predictions` dict keyed by the same `seqN` ids, each mapping to a `(1,000,000 / bin_size)`-square matrix (250 × 250 for Orca's 4 kb bins). Each task's metadata (`type_actual`, `cell_type_actual`, `scale_prediction_actual`, …) is copied into the summary CSV; only `scale_prediction_actual` is checked, against the requested scale.
 
 ---
 

@@ -10,7 +10,7 @@ This file is pre-generated and ships with the repo — you do not need to regene
 
 ## What the file contains
 
-A single `interaction_matrix` request: one `conformation_chromatin` prediction task (cell type `H1`, `log` scale, `homo_sapiens`) plus a flat `sequence_coordinates` dict that tiles the chromosome into 1 Mb windows:
+A single `interaction_matrix` request: one `conformation_chromatin` prediction task (cell type `H1-ESC`, `log` scale, `homo_sapiens`) plus a flat `sequence_coordinates` dict that tiles the chromosome into 1 Mb windows:
 
 ```json
 "sequence_coordinates": {
@@ -37,5 +37,5 @@ segment_size = 1_000_000
 python make_json_files.py
 ```
 
-Tile count is `floor((chrom_length − 1) / segment_size) + 1` — e.g. 145 (chr8), 138 (chr9), 133 (chr10) at 1 Mb.
+Tile count is `ceil((chrom_length − segment_size) / segment_size)` — e.g. 145 (chr8), 138 (chr9), 133 (chr10) at 1 Mb. The final partial window at the chromosome end is not included, so every tile is a full 1 Mb.
 
